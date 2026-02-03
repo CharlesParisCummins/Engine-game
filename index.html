@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engine Components Training Game</title>
+
+<style>
+body{
+  font-family:Arial,sans-serif;
+  background:#f4f6f8;
+  margin:0;
+  padding:6px;
+  height:100vh;
+}
+h1{
+  text-align:center;
+  font-size:20px;
+  margin:6px 0;
+}
+button{
+  padding:6px 10px;
+  font-size:14px;
+}
+.topbar{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:6px;
+  padding:8px;
+  background:white;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.1);
+}
+.main{
+  display:grid;
+  grid-template-columns:1fr 2fr;
+  gap:10px;
+  height:calc(100vh - 150px);
+  margin-top:6px;
+}
+.labels{
+  background:white;
+  padding:6px;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.1);
+  overflow-y:auto;
+}
+.label{
+  padding:12px;
+  margin-bottom:6px;
+  background:#e0e7ff;
+  border-radius:6px;
+  text-align:center;
+  font-size:16px;
+  cursor:pointer;
+}
+.label.selected{
+  background:#2563eb;
+  color:white;
+}
+.images{
+  background:white;
+  padding:6px;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.1);
+  overflow-y:auto;
+}
+.image-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;
+}
+.image-box{
+  border:2px dashed #bbb;
+  border-radius:8px;
+  min-height:130px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+.image-box img{
+  max-width:100%;
+  height:80px;
+  pointer-events:none;
+}
+.correct{
+  background:#dcfce7;
+  border-color:#22c55e;
+}
+.wrong{
+  background:#fee2e2;
+  border-color:#ef4444;
+}
+.leaderboard{
+  margin-top:6px;
+  background:white;
+  padding:8px;
+  border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,.1);
+}
+@media(max-width:900px){
+  .main{grid-template-columns:1fr 1fr;}
+  .image-grid{grid-template-columns:repeat(2,1fr);}
+}
+</style>
+</head>
+
+<body>
+
+<h1>Engine Components – Training</h1>
+
+<button id="startBtn">Start Game</button>
+
+<div class="topbar">
+  <div>
+    <strong>Score:</strong> <span id="score">0</span> /
+    <span id="total">0</span> |
+    <strong>Wrong:</strong> <span id="wrongCount">0</span> |
+    <strong>Time:</strong> <span id="timer">0</span>s
+  </div>
+  <div>
+    <button onclick="resetWrong()">Reset wrong</button>
+    <button onclick="resetAll()">Reset game</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="labels" id="labelContainer"></div>
+  <div class="images">
+    <div class="image-grid" id="imageGrid"></div>
+  </div>
+</div>
+
+<div class="leaderboard">
+  <h3>Leaderboard</h3>
+  <ol id="leaderboard"></ol>
+</div>
+
+<audio id="correctSound" src="sounds/correct.mp3" preload="auto"></audio>
+<audio id="wrongSound" src="sounds/wrong.mp3" preload="auto"></audio>
+
+<script>
+/* ================= CONFIG ================= */
+const API_URL = "https://script.google.com/macros/s/AKfycbzGinxp4gHNnYCK5dnHT7hmNfMg1of65gOozBIsLm6WLZqhKj6zx5TkoM-T-v5gbscd/exec";
+
+const components=[
+ 'valve','camshaft','injector','crankshaft','bearing','piston','conrod',
+ 'cylinder_block','rocker','gasket','oil_pan','fuel_filter','turbocharger',
+ 'alternator','starter','harness','belt','oil_pump','liner','water_pump','water_filter'
+];
+
+/* =============== STATE =================== */
+let score=0, wrong=0, time=0, timer;
+let selectedLabel=null;
+
+document.getElementById('total').textContent = components.length;
+
+/* =============== ELEMENTS ================= */
+const scoreEl=document.getElementById('score');
+const wrongEl=document.getElementById('wrongCount');
+const timerEl=document.getElementById('timer');
+const labelContainer=document.getElementById('labelContainer');
+const imageGrid=document.getElementById('imageGrid');
+const correctSound=document.getElementById('correctSound');
+const wrongSound=document.getElementById('wrongSound');
+
+/* =============== HELPERS ================== */
+function playCorrect(){ correctSound.currentTime=0; correctSound.play(); }
+function playWrong(){ wrongSound.currentTime=0; wrongSound.play(); }
+
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+}
+
+function startTimer(){
+  clearInterval(timer);
+  timer=setInterval(()=>{ time++; timerEl.textContent=time; },1000);
+}
+
+/* =============== BUILD UI ================= */
+function buildLabels(){
+  labelContainer.innerHTML='';
+  components.forEach(c=>{
+    const l=document.createElement('div');
+    l.className='label';
+    l.textContent=c.replace('_',' ');
+    l.dataset.name=c;
+    l.draggable=true;
+
+    l.onclick=()=>{
+      document.querySelectorAll('.label').forEach(x=>x.classList.remove('selected'));
+      l.classList.add('selected');
+      selectedLabel=c;
+    };
+
+    l.ondragstart=e=>{
+      e.dataTransfer.setData('text/plain',c);
+    };
+
+    labelContainer.appendChild(l);
+  });
+}
+
+function buildImages(){
+  imageGrid.innerHTML='';
+  const shuffled=[...components];
+  shuffle(shuffled);
+
+  shuffled.forEach(c=>{
+    const box=document.createElement('div');
+    box.className='image-box';
+    box.dataset.accept=c;
+    box.innerHTML=`<img src="images/${c}.jpg">`;
+
+    box.onclick=()=>handleAnswer(box,selectedLabel);
+    box.ondragover=e=>e.preventDefault();
+    box.ondrop=e=>{
+      e.preventDefault();
+      handleAnswer(box,e.dataTransfer.getData('text/plain'));
+    };
+
+    imageGrid.appendChild(box);
+  });
+}
+
+/* =============== GAME LOGIC =============== */
+function handleAnswer(box,label){
+  if(!label || box.dataset.filled) return;
+
+  if(label===box.dataset.accept){
+    box.classList.remove('wrong');
+    box.classList.add('correct');
+    box.dataset.filled=true;
+    document.querySelector(`.label[data-name="${label}"]`)?.remove();
+    selectedLabel=null;
+    score++;
+    scoreEl.textContent=score;
+    playCorrect();
+    if(score===components.length) finishGame();
+  } else {
+    box.classList.add('wrong');
+    wrong++;
+    wrongEl.textContent=wrong;
+    playWrong();
+  }
+}
+
+function finishGame(){
+  clearInterval(timer);
+  const name=prompt("Finished! Enter your name:");
+  if(!name) return;
+
+  fetch(API_URL,{
+    method:"POST",
+    body:JSON.stringify({name,score,time,wrong})
+  }).then(loadLeaderboard);
+}
+
+/* =============== LEADERBOARD ============== */
+function loadLeaderboard(){
+  fetch(API_URL)
+    .then(r=>r.json())
+    .then(data=>{
+      data.sort((a,b)=>a.time-b.time||a.wrong-b.wrong);
+      const ol=document.getElementById('leaderboard');
+      ol.innerHTML='';
+      data.slice(0,10).forEach(e=>{
+        const li=document.createElement('li');
+        li.textContent=`${e.name} – ${e.time}s – wrong: ${e.wrong}`;
+        ol.appendChild(li);
+      });
+    });
+}
+
+/* =============== CONTROLS ================= */
+window.resetWrong=()=>{
+  document.querySelectorAll('.wrong').forEach(b=>b.classList.remove('wrong'));
+};
+
+window.resetAll=()=>{
+  score=wrong=time=0;
+  scoreEl.textContent=0;
+  wrongEl.textContent=0;
+  timerEl.textContent=0;
+  selectedLabel=null;
+  buildLabels();
+  buildImages();
+  startTimer();
+};
+
+/* =============== START ==================== */
+document.getElementById('startBtn').onclick=()=>{
+  buildLabels();
+  buildImages();
+  startTimer();
+  loadLeaderboard();
+  document.getElementById('startBtn').style.display='none';
+};
+</script>
+
+</body>
+</html>
